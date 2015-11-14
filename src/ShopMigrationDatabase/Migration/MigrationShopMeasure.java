@@ -48,9 +48,9 @@
 package ShopMigrationDatabase.Migration;
 
 import ShopMigrationDatabase.Helpers.MySQLHelper;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -62,40 +62,33 @@ public class MigrationShopMeasure {
 
     private final MySQLHelper oldFormatDB;
     private final MySQLHelper newFormatDB;
-    private final ArrayList<String> sqlList = new ArrayList<>();
+    private final PreparedStatement insertPreparedStatement;
 
     public MigrationShopMeasure(MySQLHelper oldFormatDB, MySQLHelper newFormatDB) {
         this.oldFormatDB = oldFormatDB;
         this.newFormatDB = newFormatDB;
-        this.generateMigrationSQL();
+        this.insertPreparedStatement = this.newFormatDB.preparedStatement(
+                "INSERT INTO `ShopMeasure`(`measureF`, `measureS`) VALUES (?,?);");
     }
 
-    public ArrayList<String> getSqlList() {
-        return this.sqlList;
-    }
-
-    private void generateMigrationSQL() {
+    public void migrationSQL() {
         ResultSet oldFormatRS = this.oldFormatDB.executeQuery("SELECT `measure` FROM `ShopItemsPropertiesValues` GROUP BY `measure`;");
-        this.sqlList.clear();
         try {
             while (oldFormatRS.next()) {
                 String measure = oldFormatRS.getString("measure");
-                if(!"".equals(measure)) {
+                if (!"".equals(measure)) {
                     ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`measureS`) as amount FROM `ShopMeasure` WHERE `measureS`='" + measure + "';");
                     amountRS.first();
                     if (amountRS.getInt("amount") < 1) {
-                        this.sqlList.add(this.sqlInsert(measure));
+                        this.sqlInsert(measure);
                     }
                 }
             }
         } catch (SQLException ex) {
             Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
         }
-//        for (String sqlList1 : this.sqlList) {
-//            System.out.println(sqlList1);
-//        }
     }
-    
+
     private String getMeasureF(String measure) {
         try {
             ResultSet amountRS = this.oldFormatDB.executeQuery("SELECT count(`measureF`) as amount FROM `ShopItemsPropertiesMeasure` WHERE `measureS`='" + measure + "';");
@@ -111,7 +104,15 @@ public class MigrationShopMeasure {
         return measure;
     }
 
-    private String sqlInsert(String measure) {
-        return "INSERT INTO `ShopMeasure`(`measureF`, `measureS`) VALUES ('" + this.getMeasureF(measure) + "','" + measure + "');";
+    private void sqlInsert(String measure) {
+        String fMeasure = this.getMeasureF(measure);
+        System.out.println(Migration.getThisBlock() + " Insert Measure " + fMeasure + " (" + measure + ")");
+        try {
+            this.insertPreparedStatement.setString(1, fMeasure);
+            this.insertPreparedStatement.setString(2, measure);
+            this.insertPreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 }

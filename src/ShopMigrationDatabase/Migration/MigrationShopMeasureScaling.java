@@ -48,9 +48,9 @@
 package ShopMigrationDatabase.Migration;
 
 import ShopMigrationDatabase.Helpers.MySQLHelper;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -62,21 +62,20 @@ public class MigrationShopMeasureScaling {
 
     private final MySQLHelper oldFormatDB;
     private final MySQLHelper newFormatDB;
-    private final ArrayList<String> sqlList = new ArrayList<>();
+    private final PreparedStatement updatePreparedStatement;
+    private final PreparedStatement insertPreparedStatement;
 
     public MigrationShopMeasureScaling(MySQLHelper oldFormatDB, MySQLHelper newFormatDB) {
         this.oldFormatDB = oldFormatDB;
         this.newFormatDB = newFormatDB;
-        this.generateMigrationSQL();
+        this.updatePreparedStatement = this.newFormatDB.preparedStatement(
+                "UPDATE `ShopMeasureScaling` SET `aliasF`=?,`aliasS`=? WHERE `measure`=? AND `prefix`=?;");
+        this.insertPreparedStatement = this.newFormatDB.preparedStatement(
+                "INSERT INTO `ShopMeasureScaling`(`measure`, `prefix`, `aliasF`, `aliasS`) VALUES (?,?,?,?);");
     }
 
-    public ArrayList<String> getSqlList() {
-        return this.sqlList;
-    }
-
-    private void generateMigrationSQL() {
+    public void migrationSQL() {
         ResultSet oldFormatRS = this.oldFormatDB.executeQuery("SELECT `measure`, `prefix`, `alias` FROM `ShopItemsPropertiesMeasureScaling`;");
-        this.sqlList.clear();
         try {
             while (oldFormatRS.next()) {
                 String measure = oldFormatRS.getString("measure");
@@ -85,29 +84,44 @@ public class MigrationShopMeasureScaling {
                 ResultSet issetRS = this.newFormatDB.executeQuery("SELECT count(`measureF`) as amount FROM `ShopMeasure` WHERE `measureF`='" + measure + "';");
                 issetRS.first();
                 // проверяем сначала знаем ли мы скалируемую единицу измерения
-                if(issetRS.getInt("amount") > 0) {
+                if (issetRS.getInt("amount") > 0) {
                     ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`measure`) as amount FROM `ShopMeasureScaling` WHERE `measure`='" + measure + "' AND `prefix`='" + prefix + "';");
                     amountRS.first();
                     if (amountRS.getInt("amount") > 0) {
-                        this.sqlList.add(this.sqlUpdate(measure, prefix, alias));
+                        this.sqlUpdate(measure, prefix, alias);
                     } else {
-                        this.sqlList.add(this.sqlInsert(measure, prefix, alias));
+                        this.sqlInsert(measure, prefix, alias);
                     }
                 }
             }
         } catch (SQLException ex) {
             Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
         }
-//        for (String sqlList1 : this.sqlList) {
-//            System.out.println(sqlList1);
-//        }
     }
 
-    private String sqlUpdate(String measure, String prefix, String alias) {
-        return "UPDATE `ShopMeasureScaling` SET `aliasF`='" + alias + "',`aliasS`='" + alias + "' WHERE `measure`='" + measure + "' AND `prefix`='" + prefix + "';";
+    private void sqlUpdate(String measure, String prefix, String alias) {
+        System.out.println(Migration.getThisBlock() + " Update data about Measure Scaling for Measure (" + measure + ") and Prefix (" + prefix + ")");
+        try {
+            this.updatePreparedStatement.setString(1, alias);
+            this.updatePreparedStatement.setString(2, alias);
+            this.updatePreparedStatement.setString(3, measure);
+            this.updatePreparedStatement.setString(4, prefix);
+            this.updatePreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
-    private String sqlInsert(String measure, String prefix, String alias) {
-        return "INSERT INTO `ShopMeasureScaling`(`measure`, `prefix`, `aliasF`, `aliasS`) VALUES ('" + measure + "','" + prefix + "','" + alias + "','" + alias + "');";
+    private void sqlInsert(String measure, String prefix, String alias) {
+        System.out.println(Migration.getThisBlock() + " Insert data about Measure Scaling for Measure (" + measure + ") and Prefix (" + prefix + ")");
+        try {
+            this.insertPreparedStatement.setString(1, measure);
+            this.insertPreparedStatement.setString(2, prefix);
+            this.insertPreparedStatement.setString(3, alias);
+            this.insertPreparedStatement.setString(4, alias);
+            this.insertPreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 }

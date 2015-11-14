@@ -47,10 +47,11 @@
  */
 package ShopMigrationDatabase.Migration;
 
+import ShopMigrationDatabase.Helpers.MigrationHelper;
 import ShopMigrationDatabase.Helpers.MySQLHelper;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -62,48 +63,65 @@ public class MigrationShopItemsPropertiesValues {
 
     private final MySQLHelper oldFormatDB;
     private final MySQLHelper newFormatDB;
-    private final ArrayList<String> sqlList = new ArrayList<>();
+    private final PreparedStatement updatePreparedStatement;
+    private final PreparedStatement insertPreparedStatement;
 
     public MigrationShopItemsPropertiesValues(MySQLHelper oldFormatDB, MySQLHelper newFormatDB) {
         this.oldFormatDB = oldFormatDB;
         this.newFormatDB = newFormatDB;
-        this.generateMigrationSQL();
+        this.updatePreparedStatement = this.newFormatDB.preparedStatement(
+                "UPDATE `ShopItemsPropertiesValues` SET `item`=?,`property`=?,"
+                + "`value`=? WHERE `id`=?;");
+        this.insertPreparedStatement = this.newFormatDB.preparedStatement(
+                "INSERT INTO `ShopItemsPropertiesValues`(`id`, `item`, "
+                + "`property`, `value`, `inFile`) "
+                + "VALUES (?,?,?,?,'0');");
     }
 
-    public ArrayList<String> getSqlList() {
-        return this.sqlList;
-    }
-
-    private void generateMigrationSQL() {
+    public void migrationSQL() {
         ResultSet oldFormatRS = this.oldFormatDB.executeQuery("SELECT `id`, `item`, `property`, `value` FROM `ShopItemsPropertiesValues`;");
-        this.sqlList.clear();
         try {
             while (oldFormatRS.next()) {
                 String id = oldFormatRS.getString("id");
                 String item = oldFormatRS.getString("item");
-                String property = oldFormatRS.getString("property");
+                String property = MigrationHelper.getPropertyId(oldFormatRS.getString("property"));
                 String value = oldFormatRS.getString("value");
-                ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`id`) as amount FROM `ShopItemsPropertiesValues` WHERE `item`='" + item + "' AND `property`='" + property + "';");
+                ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`id`) as amount FROM `ShopItemsPropertiesValues` WHERE `id`='" + id + "';");
                 amountRS.first();
                 if (amountRS.getInt("amount") > 0) {
-                    this.sqlList.add(this.sqlUpdate(id, item, property, value));
+                    this.sqlUpdate(id, item, property, value);
                 } else {
-                    this.sqlList.add(this.sqlInsert(id, item, property, value));
+                    this.sqlInsert(id, item, property, value);
                 }
             }
         } catch (SQLException ex) {
             Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
         }
-//        for (String sqlList1 : this.sqlList) {
-//            System.out.println(sqlList1);
-//        }
     }
 
-    private String sqlUpdate(String id, String item, String property, String value) {
-        return "UPDATE `ShopItemsPropertiesValues` SET `id`='" + id + "',`value`='" + value + "' WHERE `item`='" + item + "' AND `property`='" + property + "';";
+    private void sqlUpdate(String id, String item, String property, String value) {
+        System.out.println(Migration.getThisBlock() + " Update Property Value [" + id + "]: Item [" + item + "]; Property [" + property + "];");
+        try {
+            this.updatePreparedStatement.setString(1, item);
+            this.updatePreparedStatement.setString(2, property);
+            this.updatePreparedStatement.setString(3, value);
+            this.updatePreparedStatement.setString(4, id);
+            this.updatePreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
-    private String sqlInsert(String id, String item, String property, String value) {
-        return "INSERT INTO `ShopItemsPropertiesValues`(`id`, `item`, `property`, `value`, `inFile`) VALUES ('" + id + "','" + item + "','" + property + "','" + value + "','0');";
+    private void sqlInsert(String id, String item, String property, String value) {
+        System.out.println(Migration.getThisBlock() + " Insert Property Value [" + id + "]: Item [" + item + "]; Property [" + property + "];");
+        try {
+            this.insertPreparedStatement.setString(1, id);
+            this.insertPreparedStatement.setString(2, item);
+            this.insertPreparedStatement.setString(3, property);
+            this.insertPreparedStatement.setString(4, value);
+            this.insertPreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 }

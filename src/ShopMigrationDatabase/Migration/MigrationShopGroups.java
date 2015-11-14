@@ -48,9 +48,9 @@
 package ShopMigrationDatabase.Migration;
 
 import ShopMigrationDatabase.Helpers.MySQLHelper;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -62,21 +62,22 @@ public class MigrationShopGroups {
 
     private final MySQLHelper oldFormatDB;
     private final MySQLHelper newFormatDB;
-    private final ArrayList<String> sqlList = new ArrayList<>();
+    private final PreparedStatement updatePreparedStatement;
+    private final PreparedStatement insertPreparedStatement;
 
     public MigrationShopGroups(MySQLHelper oldFormatDB, MySQLHelper newFormatDB) {
         this.oldFormatDB = oldFormatDB;
         this.newFormatDB = newFormatDB;
-        this.generateMigrationSQL();
+        this.updatePreparedStatement = this.newFormatDB.preparedStatement(
+                "UPDATE `ShopGroups` SET `groupName`=?,`shown`=?,"
+                + "`showInHierarchy`=? WHERE `id`=?;");
+        this.insertPreparedStatement = this.newFormatDB.preparedStatement(
+                "INSERT INTO `ShopGroups`(`id`, `groupName`, `shown`, "
+                + "`showInHierarchy`, `systemGroup`) VALUES (?,?,?,?,'0');");
     }
 
-    public ArrayList<String> getSqlList() {
-        return this.sqlList;
-    }
-
-    private void generateMigrationSQL() {
+    public void migrationSQL() {
         ResultSet oldFormatRS = this.oldFormatDB.executeQuery("SELECT `id`, `groupName`, `shown`, `showInHierarchy` FROM `ShopGroups`;");
-        this.sqlList.clear();
         try {
             while (oldFormatRS.next()) {
                 String id = oldFormatRS.getString("id");
@@ -86,24 +87,39 @@ public class MigrationShopGroups {
                 ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`id`) as amount FROM `ShopGroups` WHERE `id`='" + id + "';");
                 amountRS.first();
                 if (amountRS.getInt("amount") > 0) {
-                    this.sqlList.add(this.sqlUpdate(id, groupName, shown, showInHierarchy));
+                    this.sqlUpdate(id, groupName, shown, showInHierarchy);
                 } else {
-                    this.sqlList.add(this.sqlInsert(id, groupName, shown, showInHierarchy));
+                    this.sqlInsert(id, groupName, shown, showInHierarchy);
                 }
             }
         } catch (SQLException ex) {
             Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
         }
-//        for (String sqlList1 : this.sqlList) {
-//            System.out.println(sqlList1);
-//        }
     }
 
-    private String sqlUpdate(String id, String groupName, Integer shown, Integer showInHierarchy) {
-        return "UPDATE `ShopGroups` SET `groupName`='" + groupName + "',`shown`='" + shown + "',`showInHierarchy`='" + showInHierarchy + "' WHERE `id`='" + id + "';";
+    private void sqlUpdate(String id, String groupName, Integer shown, Integer showInHierarchy) {
+        System.out.println(Migration.getThisBlock() + " Update Group [" + id + "] - " + groupName);
+        try {
+            this.updatePreparedStatement.setString(1, groupName);
+            this.updatePreparedStatement.setInt(2, shown);
+            this.updatePreparedStatement.setInt(3, showInHierarchy);
+            this.updatePreparedStatement.setString(4, id);
+            this.updatePreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
-    private String sqlInsert(String id, String groupName, Integer shown, Integer showInHierarchy) {
-        return "INSERT INTO `ShopGroups`(`id`, `groupName`, `shown`, `showInHierarchy`, `systemGroup`) VALUES ('" + id + "','" + groupName + "','" + shown + "','" + showInHierarchy + "','0');";
+    private void sqlInsert(String id, String groupName, Integer shown, Integer showInHierarchy) {
+        System.out.println(Migration.getThisBlock() + " Insert Group [" + id + "] - " + groupName);
+        try {
+            this.insertPreparedStatement.setString(1, id);
+            this.insertPreparedStatement.setString(2, groupName);
+            this.insertPreparedStatement.setInt(3, shown);
+            this.insertPreparedStatement.setInt(4, showInHierarchy);
+            this.insertPreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 }

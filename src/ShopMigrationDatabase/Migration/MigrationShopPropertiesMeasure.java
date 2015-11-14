@@ -47,7 +47,9 @@
  */
 package ShopMigrationDatabase.Migration;
 
+import ShopMigrationDatabase.Helpers.MigrationHelper;
 import ShopMigrationDatabase.Helpers.MySQLHelper;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -64,15 +66,39 @@ public class MigrationShopPropertiesMeasure {
 
     private final MySQLHelper oldFormatDB;
     private final MySQLHelper newFormatDB;
+    private final PreparedStatement updatePreparedStatement;
+    private final PreparedStatement insertPreparedStatement;
     private final ArrayList<String> allMeasures = new ArrayList<>();
-    private Map<String, String> measuresFullName = new HashMap<>();
-    private final ArrayList<String> sqlList = new ArrayList<>();
+    private final Map<String, String> measuresFullName = new HashMap<>();
 
     public MigrationShopPropertiesMeasure(MySQLHelper oldFormatDB, MySQLHelper newFormatDB) {
         this.oldFormatDB = oldFormatDB;
         this.newFormatDB = newFormatDB;
+        this.updatePreparedStatement = this.newFormatDB.preparedStatement(
+                "UPDATE `ShopPropertiesMeasure` SET `measure`=? WHERE `property`=?;");
+        this.insertPreparedStatement = this.newFormatDB.preparedStatement(
+                "INSERT INTO `ShopPropertiesMeasure`(`property`, `measure`) VALUES (?,?);");
         this.allKnownMeasures();
-        this.generateMigrationSQL();
+    }
+
+    public void migrationSQL() {
+        for (String measure : allMeasures) {
+            ResultSet oldFormatRS = this.oldFormatDB.executeQuery("SELECT `property` FROM `ShopItemsPropertiesValues` WHERE `measure`='" + measure + "' GROUP BY `property`;");
+            try {
+                while (oldFormatRS.next()) {
+                    String property = oldFormatRS.getString("property");
+                    ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`property`) as amount FROM `ShopPropertiesMeasure` WHERE `property`='" + MigrationHelper.getPropertyId(property) + "';");
+                    amountRS.first();
+                    if (amountRS.getInt("amount") > 0) {
+                        this.sqlUpdate(property, measure);
+                    } else {
+                        this.sqlInsert(property, measure);
+                    }
+                }
+            } catch (SQLException ex) {
+                Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        }
     }
 
     private void allKnownMeasures() {
@@ -87,39 +113,29 @@ public class MigrationShopPropertiesMeasure {
         }
     }
 
-    public ArrayList<String> getSqlList() {
-        return this.sqlList;
-    }
-
-    private void generateMigrationSQL() {
-        this.sqlList.clear();
-        for (String measure : allMeasures) {
-            ResultSet oldFormatRS = this.oldFormatDB.executeQuery("SELECT `property` FROM `ShopItemsPropertiesValues` WHERE `measure`='" + measure + "' GROUP BY `property`;");
-            try {
-                while (oldFormatRS.next()) {
-                    String property = oldFormatRS.getString("property");
-                    ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`property`) as amount FROM `ShopPropertiesMeasure` WHERE `property`='" + property + "';");
-                    amountRS.first();
-                    if (amountRS.getInt("amount") > 0) {
-                        this.sqlList.add(this.sqlUpdate(property, measure));
-                    } else {
-                        this.sqlList.add(this.sqlInsert(property, measure));
-                    }
-                }
-            } catch (SQLException ex) {
-                Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
-            }
+    private void sqlUpdate(String property, String measure) {
+        measure = this.measuresFullName.get(measure);
+        property = MigrationHelper.getPropertyId(property);
+        System.out.println(Migration.getThisBlock() + " Update Measure " + measure + " for Property " + property);
+        try {
+            this.updatePreparedStatement.setString(1, measure);
+            this.updatePreparedStatement.setString(2, property);
+            this.updatePreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
         }
-//        for (String sqlList1 : this.sqlList) {
-//            System.out.println(sqlList1);
-//        }
     }
 
-    private String sqlUpdate(String property, String measure) {
-        return "UPDATE `ShopPropertiesMeasure` SET `property`='" + property + "',`measure`='" + this.measuresFullName.get(measure) + "';";
-    }
-
-    private String sqlInsert(String property, String measure) {
-        return "INSERT INTO `ShopPropertiesMeasure`(`property`, `measure`) VALUES ('" + property + "','" + this.measuresFullName.get(measure) + "');";
+    private void sqlInsert(String property, String measure) {
+        measure = this.measuresFullName.get(measure);
+        property = MigrationHelper.getPropertyId(property);
+        System.out.println(Migration.getThisBlock() + " Insert Measure " + measure + " for Property " + property);
+        try {
+            this.insertPreparedStatement.setString(1, property);
+            this.insertPreparedStatement.setString(2, measure);
+            this.insertPreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 }

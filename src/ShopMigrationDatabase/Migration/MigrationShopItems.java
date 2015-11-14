@@ -47,8 +47,8 @@
  */
 package ShopMigrationDatabase.Migration;
 
-import ShopMigrationDatabase.Helpers.MigrationHelper;
 import ShopMigrationDatabase.Helpers.MySQLHelper;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -63,14 +63,27 @@ public class MigrationShopItems {
 
     private final MySQLHelper oldFormatDB;
     private final MySQLHelper newFormatDB;
-    private final ArrayList<String> sqlList = new ArrayList<>();
     private final ArrayList<String> allItems = new ArrayList<>();
+    private final PreparedStatement updatePreparedStatement;
+    private final PreparedStatement insertPreparedStatement;
 
     public MigrationShopItems(MySQLHelper oldFormatDB, MySQLHelper newFormatDB) {
         this.oldFormatDB = oldFormatDB;
         this.newFormatDB = newFormatDB;
+        this.updatePreparedStatement = this.newFormatDB.preparedStatement(
+                "UPDATE `ShopItems` SET `itemName`=?,`group`=?,`action`=?,"
+                + "`totalAmount`=?,`minAmount`=?,`description`=?,"
+                + "`shown`=? WHERE `id`=?;");
+        this.insertPreparedStatement = this.newFormatDB.preparedStatement(
+                "INSERT INTO `ShopItems`(`id`, `itemName`, `article`, "
+                + "`directory`, `directoryPath`, `status`, `type`, "
+                + "`pricePer`, `serviceCenter`, `action`, `shown`, "
+                + "`toRemove`, `totalAmount`, `minAmount`, "
+                + "`description`, `group`) VALUES "
+                + "(?,?,'article','directory',"
+                + "'directoryPath','status','type','pricePer',"
+                + "'serviceCenter',?,?,'0',?,?,?,?);");
         this.allKnownItems();
-        this.generateMigrationSQL();
     }
 
     private void allKnownItems() {
@@ -84,13 +97,8 @@ public class MigrationShopItems {
         }
     }
 
-    public ArrayList<String> getSqlList() {
-        return this.sqlList;
-    }
-
-    private void generateMigrationSQL() {
+    public void migrationSQL() {
         ResultSet oldFormatRS = this.oldFormatDB.executeQuery("SELECT `id`, `itemName`, `group`, `action`, `amount`, `minAmount`, `description`, `shown` FROM `ShopItems`;");
-        this.sqlList.clear();
         try {
             while (oldFormatRS.next()) {
                 String id = oldFormatRS.getString("id");
@@ -104,45 +112,48 @@ public class MigrationShopItems {
                 ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`id`) as amount FROM `ShopItems` WHERE `id`='" + id + "';");
                 amountRS.first();
                 if (amountRS.getInt("amount") > 0) {
-                    this.sqlList.add(this.sqlUpdate(id, itemName, group, action, amount, minAmount, description, shown));
+                    this.sqlUpdate(id, itemName, group, action, amount, minAmount, description, shown);
                 } else {
-                    this.sqlList.add(this.sqlInsert(id, itemName, group, action, amount, minAmount, description, shown));
+                    this.sqlInsert(id, itemName, group, action, amount, minAmount, description, shown);
                 }
             }
         } catch (SQLException ex) {
             Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
         }
-        MigrationHelper.setItemsId(allItems);
-//        for (String sqlList1 : this.allItems) {
-//            System.out.println(sqlList1);
-//        }
-//        for (String sqlList1 : this.sqlList) {
-//            System.out.println(sqlList1);
-//        }
     }
 
-    private String sqlUpdate(String id, String itemName, String group, Integer action, Float amount, Float minAmount, String description, Integer shown) {
-        return "UPDATE `ShopItems` SET "
-                + "`itemName`='" + itemName + "',"
-                + "`group`='" + group + "',"
-                + "`action`='" + action + "',"
-                + "`totalAmount`='" + String.format("%f",amount).replace(',','.') + "',"
-                + "`minAmount`='" + String.format("%f",minAmount).replace(',','.') + "',"
-                + "`description`='" + description + "',"
-                + "`shown`='" + shown + "' WHERE `id`='" + id + "';";
+    private void sqlUpdate(String id, String itemName, String group, Integer action, Float amount, Float minAmount, String description, Integer shown) {
+        System.out.println(Migration.getThisBlock() + " Update Item [" + id + "] - " + itemName);
+        try {
+            updatePreparedStatement.setString(1, itemName);
+            updatePreparedStatement.setString(2, group);
+            updatePreparedStatement.setInt(3, action);
+            updatePreparedStatement.setFloat(4, amount);
+            updatePreparedStatement.setFloat(5, minAmount);
+            updatePreparedStatement.setString(6, description);
+            updatePreparedStatement.setInt(7, shown);
+            updatePreparedStatement.setString(8, id);
+            updatePreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopItems.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
-    private String sqlInsert(String id, String itemName, String group, Integer action, Float amount, Float minAmount, String description, Integer shown) {
-        this.allItems.add(id);
-        return "INSERT INTO `ShopItems`(`id`, `itemName`, `article`, "
-                + "`directory`, `directoryPath`, `status`, `type`, "
-                + "`pricePer`, `serviceCenter`, `action`, `shown`, "
-                + "`toRemove`, `totalAmount`, `minAmount`, "
-                + "`description`, `group`) VALUES "
-                + "('"+id+"','"+itemName+"','article','directory',"
-                + "'directoryPath','status','type','pricePer',"
-                + "'serviceCenter','"+action+"','"+shown+"','0',"
-                + "'"+String.format("%f",amount).replace(',','.')+"','"+String.format("%f",minAmount).replace(',','.')+"','"+description+"',"
-                + "'"+group+"');";
+    private void sqlInsert(String id, String itemName, String group, Integer action, Float amount, Float minAmount, String description, Integer shown) {
+        System.out.println(Migration.getThisBlock() + " Insert Item [" + id + "] - " + itemName);
+        try {
+            this.allItems.add(id);
+            insertPreparedStatement.setString(1, id);
+            insertPreparedStatement.setString(2, itemName);
+            insertPreparedStatement.setInt(3, action);
+            insertPreparedStatement.setInt(4, shown);
+            insertPreparedStatement.setFloat(5, amount);
+            insertPreparedStatement.setFloat(6, minAmount);
+            insertPreparedStatement.setString(7, description);
+            insertPreparedStatement.setString(8, group);
+            insertPreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopItems.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 }

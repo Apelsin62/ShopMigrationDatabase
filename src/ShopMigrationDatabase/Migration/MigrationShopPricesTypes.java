@@ -47,8 +47,8 @@
  */
 package ShopMigrationDatabase.Migration;
 
-import ShopMigrationDatabase.Helpers.MigrationHelper;
 import ShopMigrationDatabase.Helpers.MySQLHelper;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -63,34 +63,62 @@ public class MigrationShopPricesTypes {
 
     private final MySQLHelper oldFormatDB;
     private final MySQLHelper newFormatDB;
-    private final ArrayList<String> sqlList = new ArrayList<>();
     private final ArrayList<String> allTypes = new ArrayList<>();
     private String defaultType = null;
+    private final PreparedStatement updatePreparedStatement;
+    private final PreparedStatement insertPreparedStatement;
+    private final PreparedStatement correctDefaultTypesPreparedStatement;
 
     public MigrationShopPricesTypes(MySQLHelper oldFormatDB, MySQLHelper newFormatDB) {
         this.oldFormatDB = oldFormatDB;
         this.newFormatDB = newFormatDB;
+        this.updatePreparedStatement = this.newFormatDB.preparedStatement(
+                "UPDATE `ShopPricesTypes` SET `typeName`=?, `default`=? WHERE `id`=?;");
+        this.insertPreparedStatement = this.newFormatDB.preparedStatement(
+                "INSERT INTO `ShopPricesTypes`(`id`, `typeName`, `typeName_1c`, "
+                + "`default`) VALUES (?,?,?,?);");
+        this.correctDefaultTypesPreparedStatement = this.newFormatDB.preparedStatement(
+                "UPDATE `ShopPricesTypes` SET `default`='0' WHERE `id`=?;");
         this.allKnownTypes();
-        this.generateMigrationSQL();
     }
 
-    public ArrayList<String> getSqlList() {
-        return this.sqlList;
+    private void getDefaultTypes() {
+        try {
+            ResultSet oldAmountRS = this.oldFormatDB.executeQuery("SELECT count(`id`) as amount FROM `ShopPricesTypes` WHERE `default`='1';");
+            oldAmountRS.first();
+            if (oldAmountRS.getInt("amount") > 0) {
+                ResultSet oldKnownRS = this.oldFormatDB.executeQuery("SELECT `id` FROM `ShopPricesTypes` WHERE `default`='1';");
+                oldKnownRS.next();
+                this.defaultType = oldKnownRS.getString("id");
+                this.correctDefaultTypes();
+            } else {
+                ResultSet newAmountRS = this.newFormatDB.executeQuery("SELECT count(`id`) as amount FROM `ShopPricesTypes` WHERE `default`='1';");
+                newAmountRS.first();
+                if (newAmountRS.getInt("amount") > 0) {
+                    ResultSet newKnownRS = this.newFormatDB.executeQuery("SELECT `id` FROM `ShopPricesTypes` WHERE `default`='1';");
+                    newKnownRS.next();
+                    this.defaultType = newKnownRS.getString("id");
+                } else {
+                    this.defaultType = null;
+                }
+            }
+
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
     private void correctDefaultTypes() {
         try {
-            ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`id`) as amount FROM `ShopPricesTypes` WHERE `default`='1';");
-            amountRS.first();
-            if (amountRS.getInt("amount") > 0) {
+            ResultSet newAmountRS = this.newFormatDB.executeQuery("SELECT count(`id`) as amount FROM `ShopPricesTypes` WHERE `default`='1';");
+            newAmountRS.first();
+            if (newAmountRS.getInt("amount") > 0) {
                 ResultSet knownRS = this.newFormatDB.executeQuery("SELECT `id` FROM `ShopPricesTypes` WHERE `default`='1';");
                 knownRS.next();
                 String oldDefaultType = knownRS.getString("id");
-                if (this.defaultType == null) {
-                    this.defaultType = oldDefaultType;
-                } else {
-                    this.sqlList.add("UPDATE `ShopPricesTypes` SET `default`='0' WHERE `id`='" + oldDefaultType + "';");
-                }
+                System.out.println(Migration.getThisBlock() + " Unset default prices type for [" + oldDefaultType + "]");
+                this.correctDefaultTypesPreparedStatement.setString(1, oldDefaultType);
+                this.correctDefaultTypesPreparedStatement.executeUpdate();
             }
         } catch (SQLException ex) {
             Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
@@ -108,10 +136,10 @@ public class MigrationShopPricesTypes {
         }
     }
 
-    private void generateMigrationSQL() {
+    public void migrationSQL() {
         ResultSet oldFormatRS = this.oldFormatDB.executeQuery("SELECT `id`, `typeName`, `default` FROM `ShopPricesTypes`;");
-        this.sqlList.clear();
         try {
+            this.getDefaultTypes();
             while (oldFormatRS.next()) {
                 String id = oldFormatRS.getString("id");
                 String typeName = oldFormatRS.getString("typeName");
@@ -119,35 +147,43 @@ public class MigrationShopPricesTypes {
                 ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`id`) as amount FROM `ShopPricesTypes` WHERE `id`='" + id + "';");
                 amountRS.first();
                 if (amountRS.getInt("amount") > 0) {
-                    this.sqlList.add(this.sqlUpdate(id, typeName, def));
+                    this.sqlUpdate(id, typeName, def);
                 } else {
-                    this.sqlList.add(this.sqlInsert(id, typeName, def));
+                    this.sqlInsert(id, typeName, def);
                 }
-                if (def > 0) {
+                if (this.defaultType == null) {
                     this.defaultType = id;
                 }
             }
         } catch (SQLException ex) {
             Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
         }
-        this.correctDefaultTypes();
-        MigrationHelper.setPricesTypes(allTypes, defaultType);
-//        for (String sqlList1 : this.allTypes) {
-//            System.out.println(sqlList1);
-//        }
-//        for (String sqlList1 : this.sqlList) {
-//            System.out.println(sqlList1);
-//        }
-//        System.out.println(this.defaultType);
     }
 
-    private String sqlUpdate(String id, String typeName, Integer def) {
-        return "UPDATE `ShopPricesTypes` SET `typeName`='" + typeName + "', `default`='" + def + "' WHERE `id`='" + id + "';";
+    private void sqlUpdate(String id, String typeName, Integer def) {
+        System.out.println(Migration.getThisBlock() + " Update Prices Type [" + id + "] - " + typeName);
+        try {
+            this.updatePreparedStatement.setString(1, typeName);
+            this.updatePreparedStatement.setInt(2, def);
+            this.updatePreparedStatement.setString(3, id);
+            this.updatePreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopPricesTypes.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
-    private String sqlInsert(String id, String typeName, Integer def) {
-        this.allTypes.add(id);
-        return "INSERT INTO `ShopPricesTypes`(`id`, `typeName`, `typeName_1c`, `default`) VALUES ('" + id + "','" + typeName + "','" + typeName + "','" + def + "');";
+    private void sqlInsert(String id, String typeName, Integer def) {
+        System.out.println(Migration.getThisBlock() + " Insert Prices Type [" + id + "] - " + typeName);
+        try {
+            this.allTypes.add(id);
+            this.insertPreparedStatement.setString(1, id);
+            this.insertPreparedStatement.setString(2, typeName);
+            this.insertPreparedStatement.setString(3, typeName);
+            this.insertPreparedStatement.setInt(4, def);
+            this.insertPreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopPricesTypes.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
 }

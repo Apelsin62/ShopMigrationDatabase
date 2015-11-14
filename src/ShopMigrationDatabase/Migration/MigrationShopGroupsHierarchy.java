@@ -48,9 +48,9 @@
 package ShopMigrationDatabase.Migration;
 
 import ShopMigrationDatabase.Helpers.MySQLHelper;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -62,21 +62,20 @@ public class MigrationShopGroupsHierarchy {
 
     private final MySQLHelper oldFormatDB;
     private final MySQLHelper newFormatDB;
-    private final ArrayList<String> sqlList = new ArrayList<>();
+    private final PreparedStatement updatePreparedStatement;
+    private final PreparedStatement insertPreparedStatement;
 
     public MigrationShopGroupsHierarchy(MySQLHelper oldFormatDB, MySQLHelper newFormatDB) {
         this.oldFormatDB = oldFormatDB;
         this.newFormatDB = newFormatDB;
-        this.generateMigrationSQL();
+        this.updatePreparedStatement = this.newFormatDB.preparedStatement(
+                "UPDATE `ShopGroupsHierarchy` SET `parentGroup`=? WHERE `group`=?;");
+        this.insertPreparedStatement = this.newFormatDB.preparedStatement(
+                "INSERT INTO `ShopGroupsHierarchy`(`group`, `parentGroup`) VALUES (?,?);");
     }
 
-    public ArrayList<String> getSqlList() {
-        return this.sqlList;
-    }
-
-    private void generateMigrationSQL() {
+    public void migrationSQL() {
         ResultSet oldFormatRS = this.oldFormatDB.executeQuery("SELECT `group`, `parentGroup` FROM `ShopGroupsHierarchy`;");
-        this.sqlList.clear();
         try {
             while (oldFormatRS.next()) {
                 String group = oldFormatRS.getString("group");
@@ -84,24 +83,35 @@ public class MigrationShopGroupsHierarchy {
                 ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`group`) as amount FROM `ShopGroupsHierarchy` WHERE `group`='" + group + "';");
                 amountRS.first();
                 if (amountRS.getInt("amount") > 0) {
-                    this.sqlList.add(this.sqlUpdate(group, parentGroup));
+                    this.sqlUpdate(group, parentGroup);
                 } else {
-                    this.sqlList.add(this.sqlInsert(group, parentGroup));
+                    this.sqlInsert(group, parentGroup);
                 }
             }
         } catch (SQLException ex) {
             Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
         }
-//        for (String sqlList1 : this.sqlList) {
-//            System.out.println(sqlList1);
-//        }
     }
 
-    private String sqlUpdate(String group, String parentGroup) {
-        return "UPDATE `ShopGroupsHierarchy` SET `parentGroup`='" + parentGroup + "' WHERE `group`='" + group + "';";
+    private void sqlUpdate(String group, String parentGroup) {
+        System.out.println(Migration.getThisBlock() + " Update child Group [" + group + "] for parent Group [" + parentGroup + "]");
+        try {
+            this.updatePreparedStatement.setString(1, parentGroup);
+            this.updatePreparedStatement.setString(2, group);
+            this.updatePreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
-    private String sqlInsert(String group, String parentGroup) {
-        return "INSERT INTO `ShopGroupsHierarchy`(`group`, `parentGroup`) VALUES ('" + group + "','" + parentGroup + "');";
+    private void sqlInsert(String group, String parentGroup) {
+        System.out.println(Migration.getThisBlock() + " Insert child Group [" + group + "] for parent Group [" + parentGroup + "]");
+        try {
+            this.insertPreparedStatement.setString(1, group);
+            this.insertPreparedStatement.setString(2, parentGroup);
+            this.insertPreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 }

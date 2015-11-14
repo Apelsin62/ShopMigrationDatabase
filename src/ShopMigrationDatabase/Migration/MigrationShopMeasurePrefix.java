@@ -48,9 +48,9 @@
 package ShopMigrationDatabase.Migration;
 
 import ShopMigrationDatabase.Helpers.MySQLHelper;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -62,21 +62,22 @@ public class MigrationShopMeasurePrefix {
 
     private final MySQLHelper oldFormatDB;
     private final MySQLHelper newFormatDB;
-    private final ArrayList<String> sqlList = new ArrayList<>();
+    private final PreparedStatement updatePreparedStatement;
+    private final PreparedStatement insertPreparedStatement;
 
     public MigrationShopMeasurePrefix(MySQLHelper oldFormatDB, MySQLHelper newFormatDB) {
         this.oldFormatDB = oldFormatDB;
         this.newFormatDB = newFormatDB;
-        this.generateMigrationSQL();
+        this.updatePreparedStatement = this.newFormatDB.preparedStatement(
+                "UPDATE `ShopMeasurePrefix` SET `prefixS`=?,`factor`=?,"
+                + "`reverseFactor`=? WHERE `prefixF`=?;");
+        this.insertPreparedStatement = this.newFormatDB.preparedStatement(
+                "INSERT INTO `ShopMeasurePrefix`(`prefixF`, `prefixS`, "
+                + "`factor`, `reverseFactor`) VALUES (?,?,?,?);");
     }
 
-    public ArrayList<String> getSqlList() {
-        return this.sqlList;
-    }
-
-    private void generateMigrationSQL() {
+    public void migrationSQL() {
         ResultSet oldFormatRS = this.oldFormatDB.executeQuery("SELECT `prefixF`, `prefixS`, `factor`, `reverseFactor` FROM `ShopItemsPropertiesMeasurePrefix`;");
-        this.sqlList.clear();
         try {
             while (oldFormatRS.next()) {
                 String prefixF = oldFormatRS.getString("prefixF");
@@ -86,24 +87,39 @@ public class MigrationShopMeasurePrefix {
                 ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`prefixF`) as amount FROM `ShopMeasurePrefix` WHERE `prefixF`='" + prefixF + "';");
                 amountRS.first();
                 if (amountRS.getInt("amount") > 0) {
-                    this.sqlList.add(this.sqlUpdate(prefixF, prefixS, factor, reverseFactor));
+                    this.sqlUpdate(prefixF, prefixS, factor, reverseFactor);
                 } else {
-                    this.sqlList.add(this.sqlInsert(prefixF, prefixS, factor, reverseFactor));
+                    this.sqlInsert(prefixF, prefixS, factor, reverseFactor);
                 }
             }
         } catch (SQLException ex) {
             Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
         }
-//        for (String sqlList1 : this.sqlList) {
-//            System.out.println(sqlList1);
-//        }
     }
 
-    private String sqlUpdate(String prefixF, String prefixS, Float factor, Float reverseFactor) {
-        return "UPDATE `ShopMeasurePrefix` SET `prefixS`='" + prefixS + "',`factor`='" + String.format("%20.20f",factor).replace(',','.') + "',`reverseFactor`='" + String.format("%20.20f",reverseFactor).replace(',','.') + "' WHERE `prefixF`='" + prefixF + "';";
+    private void sqlUpdate(String prefixF, String prefixS, Float factor, Float reverseFactor) {
+        System.out.println(Migration.getThisBlock() + " Update Measure Prefix " + prefixF + " (" + prefixS + ")");
+        try {
+            this.updatePreparedStatement.setString(1, prefixS);
+            this.updatePreparedStatement.setFloat(2, factor);
+            this.updatePreparedStatement.setFloat(3, reverseFactor);
+            this.updatePreparedStatement.setString(4, prefixF);
+            this.updatePreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 
-    private String sqlInsert(String prefixF, String prefixS, Float factor, Float reverseFactor) {
-        return "INSERT INTO `ShopMeasurePrefix`(`prefixF`, `prefixS`, `factor`, `reverseFactor`) VALUES ('" + prefixF + "','" + prefixS + "','" + String.format("%20.20f",factor).replace(',','.') + "','" + String.format("%20.20f",reverseFactor).replace(',','.') + "');";
+    private void sqlInsert(String prefixF, String prefixS, Float factor, Float reverseFactor) {
+        System.out.println(Migration.getThisBlock() + " Insert Measure Prefix " + prefixF + " (" + prefixS + ")");
+        try {
+            this.insertPreparedStatement.setString(1, prefixF);
+            this.insertPreparedStatement.setString(2, prefixS);
+            this.insertPreparedStatement.setFloat(3, factor);
+            this.insertPreparedStatement.setFloat(4, reverseFactor);
+            this.insertPreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 }

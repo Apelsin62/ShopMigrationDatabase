@@ -58,40 +58,18 @@ import java.util.Map;
 public class MigrationHelper {
 
     private static Map<String, String> propertiesId = new HashMap<>();
-    private static ArrayList<String> pricesTypes = new ArrayList<>();
-    private static String defaultPricesTypes;
-    private static ArrayList<String> itemsId = new ArrayList<>();
-    
-    public static void setItemsId(ArrayList<String> items) {
-        MigrationHelper.itemsId = items;
-    }
-    
-    public static ArrayList<String> getItemsId() {
-        return MigrationHelper.itemsId;
-    }
-    
-    public static void setPricesTypes(ArrayList<String> pricesTypes, String defaultPricesTypes) {
-        MigrationHelper.pricesTypes = pricesTypes;
-        MigrationHelper.defaultPricesTypes = defaultPricesTypes;
-    }
-    
-    public static ArrayList<String> getPricesTypes() {
-        return MigrationHelper.pricesTypes;
-    }
-    
-    public static String getDefaultPricesTypes() {
-        return MigrationHelper.defaultPricesTypes;
-    }
 
-
+    // задать псевдонимы для свойств
     public static void setPropertiesId(Map<String, String> propertiesId) {
         MigrationHelper.propertiesId = propertiesId;
     }
 
-    public static Map<String, String> getPropertiesId(Map<String, String> propertiesId) {
+    // поулчить псевдонимы для свойств
+    public static Map<String, String> getPropertiesId() {
         return MigrationHelper.propertiesId;
     }
-
+    
+    // поулчить по идентификатору свойсвта его целефой идентификатор
     public static String getPropertyId(String id) {
         String rezult = id;
         if (MigrationHelper.propertiesId.get(id) != null) {

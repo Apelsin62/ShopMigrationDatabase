@@ -50,7 +50,6 @@ package ShopMigrationDatabase.Migration;
 import ShopMigrationDatabase.General.SystemConstants;
 import ShopMigrationDatabase.Helpers.MySQLHelper;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Date;
 
 /**
@@ -59,60 +58,84 @@ import java.util.Date;
  */
 public class Migration {
 
-    private final MySQLHelper oldFormatDB = new MySQLHelper(SystemConstants.getOldFormatDatabaseConnectionsName());
-    private final MySQLHelper newFormatDB = new MySQLHelper(SystemConstants.getNewFormatDatabaseConnectionsName());
-    private final Integer allBlocks = 12;
+    private MySQLHelper oldFormatDB;
+    private MySQLHelper newFormatDB;
+    private SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy HH:mm:ss");
+    public static Integer allBlocks = 12;
+    public static Integer totalBlock = 0;
 
-    public Migration() {
+    public Migration() {}
+    
+    public void executeMigration() {
+        oldFormatDB = new MySQLHelper(SystemConstants.getOldFormatDatabaseConnectionsName());
+        newFormatDB = new MySQLHelper(SystemConstants.getNewFormatDatabaseConnectionsName());
+        this.startBlock("Groups");
         MigrationShopGroups shopGroups = new MigrationShopGroups(oldFormatDB, newFormatDB);
-        this.executeSqlList(shopGroups.getSqlList(), "ShopGroups", 1);
+        shopGroups.migrationSQL();
+        this.endBlock("Groups");
+        this.startBlock("Groups Hierarchy");
         MigrationShopGroupsHierarchy shopGroupsHierarchy = new MigrationShopGroupsHierarchy(oldFormatDB, newFormatDB);
-        this.executeSqlList(shopGroupsHierarchy.getSqlList(), "ShopGroupsHierarchy", 2);
+        shopGroupsHierarchy.migrationSQL();
+        this.endBlock("Groups Hierarchy");
+        this.startBlock("Prices Types");
         MigrationShopPricesTypes shopPricesTypes = new MigrationShopPricesTypes(oldFormatDB, newFormatDB);
-        this.executeSqlList(shopPricesTypes.getSqlList(), "ShopPricesTypes", 3);
+        shopPricesTypes.migrationSQL();
+        this.endBlock("Prices Types");
+        this.startBlock("Items");
         MigrationShopItems shopItems = new MigrationShopItems(oldFormatDB, newFormatDB);
-        this.executeSqlList(shopItems.getSqlList(), "ShopItems", 4);
+        shopItems.migrationSQL();
+        this.endBlock("Items");
+        this.startBlock("Items Prices");
         MigrationShopItemsPrices shopItemsPrices = new MigrationShopItemsPrices(oldFormatDB, newFormatDB);
-        this.executeSqlList(shopItemsPrices.getSqlList(), "ShopItemsPrices", 5);
+        shopItemsPrices.migrationSQL();
+        this.endBlock("Items Prices");
+        this.startBlock("Properties");
         MigrationShopProperties shopProperties = new MigrationShopProperties(oldFormatDB, newFormatDB);
-        this.executeSqlList(shopProperties.getSqlList(), "ShopProperties", 6);
+        shopProperties.migrationSQL();
+        this.endBlock("Properties");
+        this.startBlock("Measure");
         MigrationShopMeasure shopMeasure = new MigrationShopMeasure(oldFormatDB, newFormatDB);
-        this.executeSqlList(shopMeasure.getSqlList(), "ShopMeasure", 7);
+        shopMeasure.migrationSQL();
+        this.endBlock("Measure");
+        this.startBlock("Properties Measure");
         MigrationShopPropertiesMeasure shopPropertiesMeasure = new MigrationShopPropertiesMeasure(oldFormatDB, newFormatDB);
-        this.executeSqlList(shopPropertiesMeasure.getSqlList(), "ShopPropertiesMeasure", 8);
+        shopPropertiesMeasure.migrationSQL();
+        this.endBlock("Properties Measure");
+        this.startBlock("Measure Prefix");
         MigrationShopMeasurePrefix shopMeasurePrefix = new MigrationShopMeasurePrefix(oldFormatDB, newFormatDB);
-        this.executeSqlList(shopMeasurePrefix.getSqlList(), "ShopMeasurePrefix", 9);
+        shopMeasurePrefix.migrationSQL();
+        this.endBlock("Measure Prefix");
+        this.startBlock("Measure Scaling");
         MigrationShopMeasureScaling shopMeasureScaling = new MigrationShopMeasureScaling(oldFormatDB, newFormatDB);
-        this.executeSqlList(shopMeasureScaling.getSqlList(), "ShopMeasureScaling", 10);
+        shopMeasureScaling.migrationSQL();
+        this.endBlock("Measure Scaling");
+        this.startBlock("Properties In Groups");
         MigrationShopPropertiesInGroups propertiesInGroups = new MigrationShopPropertiesInGroups(oldFormatDB, newFormatDB);
-        this.executeSqlList(propertiesInGroups.getSqlList(), "PropertiesInGroups", 11);
+        propertiesInGroups.migrationSQL();
+        this.endBlock("Properties In Groups");
+        this.startBlock("Properties Values");
         MigrationShopItemsPropertiesValues shopItemsPropertiesValues = new MigrationShopItemsPropertiesValues(oldFormatDB, newFormatDB);
-        this.executeSqlList(shopItemsPropertiesValues.getSqlList(), "ShopItemsPropertiesValues", 12);
+        shopItemsPropertiesValues.migrationSQL();
+        this.endBlock("Properties Values");
         this.oldFormatDB.close();
         this.newFormatDB.close();
     }
-
-    private void executeSqlList(ArrayList<String> sqlList, String blockName, Integer totalBlock) {
-        int all = sqlList.size();
-        int total = 0;
-        int old = -1;
-        old = this.progressBar(blockName, all, total++, old, totalBlock);
-        for (String sql : sqlList) {
-            this.newFormatDB.executeUpdate(sql);
-            old = this.progressBar(blockName, all, total++, old, totalBlock);
-        }
-        System.out.println(blockName + " done!");
+    
+    public static String getThisBlock() {
+        return Migration.totalBlock + "/" + Migration.allBlocks;
+    }
+    
+    private void startBlock(String blockName) {
+        this.totalBlock++;
+        Date date = new Date();
+        System.out.println(this.dateFormat.format(date) + " > Mirgation (" + Migration.getThisBlock() + ") " + blockName + " - START!");
+    }
+    
+    private void endBlock(String blockName) {
+        Date date = new Date();
+        System.out.println(this.dateFormat.format(date) + " > Mirgation (" + Migration.getThisBlock() + ") " + blockName + " - DONE!");
         System.out.println();
     }
-
-    private int progressBar(String name, int all, int total, int old, int totalBlock) {
-        SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy hh:mm:ss");
-        int data;
-        data = (int) ((float) total / (float) all * 100);
-        if (data > old) {
-            Date date = new Date();
-            System.out.println(name + " (" + totalBlock + "/" + this.allBlocks + ") [" + dateFormat.format(date) + "] " + (int) data + "%");
-        }
-        return data;
-    }
+    
+    
 }

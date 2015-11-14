@@ -49,9 +49,9 @@ package ShopMigrationDatabase.Migration;
 
 import ShopMigrationDatabase.Helpers.MigrationHelper;
 import ShopMigrationDatabase.Helpers.MySQLHelper;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
@@ -65,19 +65,54 @@ public class MigrationShopProperties {
 
     private final MySQLHelper oldFormatDB;
     private final MySQLHelper newFormatDB;
-    private final ArrayList<String> sqlList = new ArrayList<>();
+    private final PreparedStatement updatePreparedStatement;
+    private final PreparedStatement insertPreparedStatement;
     private final Map<String, String> aliasId = new HashMap<>();
     private final Map<String, String> allNames = new HashMap<>();
 
     public MigrationShopProperties(MySQLHelper oldFormatDB, MySQLHelper newFormatDB) {
         this.oldFormatDB = oldFormatDB;
         this.newFormatDB = newFormatDB;
+        this.updatePreparedStatement = this.newFormatDB.preparedStatement(
+                "UPDATE `ShopProperties` SET `propertyName`=?, `filterType`=?, "
+                + "`valueType`=?, `oneOfAllValues`=? WHERE `id`=?;");
+        this.insertPreparedStatement = this.newFormatDB.preparedStatement(
+                "INSERT INTO `ShopProperties`(`id`, `propertyName`, "
+                + "`filterType`, `valueType`, `oneOfAllValues`) "
+                + "VALUES (?,?,?,?,?);");
         this.allKnownNames();
-        this.generateMigrationSQL();
     }
 
-    public ArrayList<String> getSqlList() {
-        return this.sqlList;
+    public void migrationSQL() {
+        ResultSet oldFormatRS = this.oldFormatDB.executeQuery("SELECT `id`, `propertyName`, `filterType`, `valueType`, `oneOfAllValues` FROM `ShopProperties`;");
+        this.aliasId.clear();
+        try {
+            while (oldFormatRS.next()) {
+                String id = oldFormatRS.getString("id");
+                String propertyName = oldFormatRS.getString("propertyName");
+                String filterType = MigrationHelper.getFilterType(oldFormatRS.getString("filterType"));
+                String valueType = MigrationHelper.getValueType(oldFormatRS.getString("valueType"));
+                Integer oneOfAllValues = oldFormatRS.getInt("oneOfAllValues");
+                ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`id`) as amount FROM `ShopProperties` WHERE `id`='" + id + "';");
+                amountRS.first();
+                String allNamesKey = generateAllNamesKey(propertyName, filterType, valueType);
+                if (this.allNames.get(allNamesKey) != null) {
+                    System.out.println("Property [" + id + "] (" + propertyName + ") refers to Property [" + this.allNames.get(allNamesKey) + "]");
+                    this.aliasId.put(id, this.allNames.get(allNamesKey));
+                } else {
+                    this.allNames.put(allNamesKey, id);
+                    this.aliasId.put(id, id);
+                    if (amountRS.getInt("amount") > 0) {
+                        this.sqlUpdate(id, propertyName, filterType, valueType, oneOfAllValues);
+                    } else {
+                        this.sqlInsert(id, propertyName, filterType, valueType, oneOfAllValues);
+                    }
+                }
+            }
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        MigrationHelper.setPropertiesId(aliasId);
     }
 
     private void allKnownNames() {
@@ -92,56 +127,35 @@ public class MigrationShopProperties {
         }
     }
 
-    private void generateMigrationSQL() {
-        ResultSet oldFormatRS = this.oldFormatDB.executeQuery("SELECT `id`, `propertyName`, `filterType`, `valueType`, `oneOfAllValues` FROM `ShopProperties`;");
-        this.sqlList.clear();
-        this.aliasId.clear();
+    private String generateAllNamesKey(String propertyName, String filterType, String valueType) {
+        return propertyName + "{&}" + filterType + "{&}" + valueType;
+    }
+
+    private void sqlUpdate(String id, String propertyName, String filterType, String valueType, Integer oneOfAllValues) {
+        System.out.println(Migration.getThisBlock() + " Update Property [" + id + "] - " + propertyName);
         try {
-            while (oldFormatRS.next()) {
-                String id = oldFormatRS.getString("id");
-                String propertyName = oldFormatRS.getString("propertyName");
-                String filterType = MigrationHelper.getFilterType(oldFormatRS.getString("filterType"));
-                String valueType = MigrationHelper.getValueType(oldFormatRS.getString("valueType"));
-                Integer oneOfAllValues = oldFormatRS.getInt("oneOfAllValues");
-                ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`id`) as amount FROM `ShopProperties` WHERE `id`='" + id + "';");
-                amountRS.first();
-                String allNamesKey = generateAllNamesKey(propertyName, filterType, valueType);
-                if (this.allNames.get(allNamesKey) != null) {
-                    this.aliasId.put(id, this.allNames.get(allNamesKey));
-                } else {
-                    this.allNames.put(allNamesKey, id);
-                    this.aliasId.put(id, id);
-                    if (amountRS.getInt("amount") > 0) {
-                        this.sqlList.add(this.sqlUpdate(id, propertyName, filterType, valueType, oneOfAllValues));
-                    } else {
-                        this.sqlList.add(this.sqlInsert(id, propertyName, filterType, valueType, oneOfAllValues));
-                    }
-                }
-            }
+            this.updatePreparedStatement.setString(1, propertyName);
+            this.updatePreparedStatement.setString(2, filterType);
+            this.updatePreparedStatement.setString(3, valueType);
+            this.updatePreparedStatement.setInt(4, oneOfAllValues);
+            this.updatePreparedStatement.setString(5, id);
+            this.updatePreparedStatement.executeUpdate();
         } catch (SQLException ex) {
             Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
         }
-        MigrationHelper.setPropertiesId(aliasId);
-//        for (Map.Entry<String, String> entry : this.allNames.entrySet()) {
-//            System.out.println("Key : " + entry.getKey() + " Value : " + entry.getValue());
-//        }
-//        for (Map.Entry<String, String> entry : this.aliasId.entrySet()) {
-//            System.out.println("Key : " + entry.getKey() + " Value : " + entry.getValue());
-//        }
-//        for (String sqlList1 : this.sqlList) {
-//            System.out.println(sqlList1);
-//        }
     }
 
-    private String sqlUpdate(String id, String propertyName, String filterType, String valueType, Integer oneOfAllValues) {
-        return "UPDATE `ShopProperties` SET `propertyName`='" + propertyName + "', `filterType`='" + filterType + "', `valueType`='" + valueType + "', `oneOfAllValues`='" + oneOfAllValues + "' WHERE `id`='" + id + "';";
-    }
-
-    private String sqlInsert(String id, String propertyName, String filterType, String valueType, Integer oneOfAllValues) {
-        return "INSERT INTO `ShopProperties`(`id`, `propertyName`, `filterType`, `valueType`, `oneOfAllValues`) VALUES ('" + id + "','" + propertyName + "','" + filterType + "','" + valueType + "','" + oneOfAllValues + "');";
-    }
-    
-    private String generateAllNamesKey(String propertyName, String filterType, String valueType) {
-        return propertyName+"{&}"+filterType+"{&}"+valueType;
+    private void sqlInsert(String id, String propertyName, String filterType, String valueType, Integer oneOfAllValues) {
+        System.out.println(Migration.getThisBlock() + " Insert Property [" + id + "] - " + propertyName);
+        try {
+            this.insertPreparedStatement.setString(1, id);
+            this.insertPreparedStatement.setString(2, propertyName);
+            this.insertPreparedStatement.setString(3, filterType);
+            this.insertPreparedStatement.setString(4, valueType);
+            this.insertPreparedStatement.setInt(5, oneOfAllValues);
+            this.insertPreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 }

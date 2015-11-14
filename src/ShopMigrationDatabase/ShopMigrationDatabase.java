@@ -17,7 +17,8 @@ public class ShopMigrationDatabase {
      * @param args the command line arguments
      */
     public static void main(String[] args) {
-        Migration test = new Migration();
+        Migration migration = new Migration();
+        migration.executeMigration();
     }
 
 }

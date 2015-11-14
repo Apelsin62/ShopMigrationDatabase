@@ -47,8 +47,10 @@
  */
 package ShopMigrationDatabase.Migration;
 
+import ShopMigrationDatabase.Helpers.MigrationHelper;
 import ShopMigrationDatabase.Helpers.MySQLHelper;
 import ShopMigrationDatabase.Migration.ShopGroups.ShopGroupsHelper;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -65,81 +67,61 @@ public class MigrationShopPropertiesInGroups {
 
     private final MySQLHelper oldFormatDB;
     private final MySQLHelper newFormatDB;
+    private final PreparedStatement updatePropertiesInGroupsPreparedStatement;
+    private final PreparedStatement insertPropertiesInGroupsPreparedStatement;
+    private final PreparedStatement insertPropertiesInGroupsRankingPreparedStatement;
     private final ShopGroupsHelper shopGroupsHelper = new ShopGroupsHelper();
-    private final ArrayList<String> sqlList = new ArrayList<>();
     private Map<String, ArrayList<String>> groupsChildren = new HashMap<>();
     private Map<String, ArrayList<String>> groupsPath = new HashMap<>();
     private Map<String, Integer> propertySequence = new HashMap<>();
 
-
-
     public MigrationShopPropertiesInGroups(MySQLHelper oldFormatDB, MySQLHelper newFormatDB) {
         this.oldFormatDB = oldFormatDB;
         this.newFormatDB = newFormatDB;
+        this.updatePropertiesInGroupsPreparedStatement = this.newFormatDB.preparedStatement(
+                "UPDATE `ShopPropertiesInGroups` SET `id`=?,`sequence`=? "
+                + "WHERE `group`=? AND `property`=?;");
+        this.insertPropertiesInGroupsPreparedStatement = this.newFormatDB.preparedStatement(
+                "INSERT INTO `ShopPropertiesInGroups`(`id`, `group`, "
+                + "`property`, `sequence`) VALUES (?,?,?,?);");
+        this.insertPropertiesInGroupsRankingPreparedStatement = this.newFormatDB.preparedStatement(
+                "INSERT INTO `ShopPropertiesInGroupsRanking`(`group`, "
+                + "`propertyInGroup`, `sequence`, `shown`) "
+                + "VALUES (?,?,?,'1');");
         this.groupsChildren = this.shopGroupsHelper.getGroupsChildren();
         this.groupsPath = this.shopGroupsHelper.getGroupsPath();
-        this.generateMigrationSQL();
     }
 
-    public ArrayList<String> getSqlList() {
-        return this.sqlList;
-    }
-
-    private void generateMigrationSQL() {
+    public void migrationSQL() {
         ResultSet oldFormatRS = this.oldFormatDB.executeQuery("SELECT `group`, `property`, `sequence` FROM `ShopPropertiesInGroups` ORDER BY `sequence` ASC;");
-        this.sqlList.clear();
         try {
             while (oldFormatRS.next()) {
                 String group = oldFormatRS.getString("group");
-                String property = oldFormatRS.getString("property");
+                String property = MigrationHelper.getPropertyId(oldFormatRS.getString("property"));
                 String id = group.concat(property);
                 Integer sequence = oldFormatRS.getInt("sequence");
                 ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`id`) as amount FROM `ShopPropertiesInGroups` WHERE `group`='" + group + "' AND `property`='" + property + "';");
                 amountRS.first();
                 if (amountRS.getInt("amount") > 0) {
-                    this.sqlList.addAll(this.sqlUpdate(id, group, property, sequence));
+                    this.sqlUpdate(id, group, property, sequence);
                 } else {
-                    this.sqlList.addAll(this.sqlInsert(id, group, property, sequence));
+                    this.sqlInsert(id, group, property, sequence);
                 }
             }
         } catch (SQLException ex) {
             Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
         }
-//        for (String sqlList1 : this.sqlList) {
-//            System.out.println(sqlList1);
-//        }
     }
 
-    private ArrayList<String> sqlUpdate(String id, String group, String property, Integer sequence) {
-        ArrayList<String> sqlList = new ArrayList<>();
-        sqlList.add("UPDATE `ShopPropertiesInGroups` SET `id`='" + id + "',`sequence`='" + sequence + "' WHERE `group`='" + group + "' AND `property`='" + property + "';");
-        return sqlList;
-    }
-
-    private ArrayList<String> sqlInsert(String id, String group, String property, Integer sequence) {
-        ArrayList<String> sqlList = new ArrayList<>();
-        if(this.checkParentGroup(group, property)) {
-            sqlList.add("INSERT INTO `ShopPropertiesInGroups`(`id`, `group`, `property`, `sequence`) VALUES ('" + id + "','" + group + "','" + property + "','" + sequence + "');");
-            sqlList.add("INSERT INTO `ShopPropertiesInGroupsRanking`(`group`, `propertyInGroup`, `sequence`, `shown`) VALUES ('" + group + "','" + id + "','" + this.getPropertiesInGroupsRankingSequence(group) + "','1');");
-            ArrayList<String> children = this.groupsChildren.get(group);
-            for (String child : children) {
-                sqlList.add("INSERT INTO `ShopPropertiesInGroupsRanking`(`group`, `propertyInGroup`, `sequence`, `shown`) VALUES ('" + child + "','" + id + "','" + this.getPropertiesInGroupsRankingSequence(child) + "','1');");
-            }
-        } else {
-            System.out.println("Свойство " + property + " уже используется в одном из родителей группы " + group);
-        }
-        return sqlList;
-    }
-    
     private Integer getPropertiesInGroupsRankingSequence(String group) {
-        if(this.propertySequence.get(group) != null) {
+        if (this.propertySequence.get(group) != null) {
             this.propertySequence.put(group, this.propertySequence.get(group) + 1);
         } else {
             this.propertySequence.put(group, this.getPropertiesInGroupsRankingStartSequence(group));
         }
         return this.propertySequence.get(group);
     }
-    
+
     private Integer getPropertiesInGroupsRankingStartSequence(String group) {
         try {
             ResultSet amountRS = this.newFormatDB.executeQuery("SELECT count(`propertyInGroup`) as amount FROM `ShopPropertiesInGroupsRanking` WHERE `group`='" + group + "';");
@@ -150,7 +132,7 @@ public class MigrationShopPropertiesInGroups {
         }
         return 1;
     }
-    
+
     private Boolean checkParentGroup(String group, String property) {
         ArrayList<String> groupPath = this.groupsPath.get(group);
         Boolean successfully = true;
@@ -166,5 +148,52 @@ public class MigrationShopPropertiesInGroups {
             }
         }
         return successfully;
+    }
+
+    private void sqlUpdate(String id, String group, String property, Integer sequence) {
+        System.out.println(Migration.getThisBlock() + " UPDATE Shop Property [" + property + "] In Groups [" + group + "]");
+        try {
+            this.updatePropertiesInGroupsPreparedStatement.setString(1, id);
+            this.updatePropertiesInGroupsPreparedStatement.setInt(2, sequence);
+            this.updatePropertiesInGroupsPreparedStatement.setString(3, group);
+            this.updatePropertiesInGroupsPreparedStatement.setString(4, property);
+            this.updatePropertiesInGroupsPreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+
+    private void sqlInsert(String id, String group, String property, Integer sequence) {
+        if (this.checkParentGroup(group, property)) {
+            System.out.println(Migration.getThisBlock() + " Insert Shop Property [" + property + "] In Groups [" + group + "]");
+            try {
+                this.insertPropertiesInGroupsPreparedStatement.setString(1, id);
+                this.insertPropertiesInGroupsPreparedStatement.setString(2, group);
+                this.insertPropertiesInGroupsPreparedStatement.setString(3, property);
+                this.insertPropertiesInGroupsPreparedStatement.setInt(4, sequence);
+                this.insertPropertiesInGroupsPreparedStatement.executeUpdate();
+                this.sqlAdditionalInsert(group, id, property);
+                ArrayList<String> children = this.groupsChildren.get(group);
+                for (String child : children) {
+                    this.sqlAdditionalInsert(child, id, property);
+                }
+            } catch (SQLException ex) {
+                Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+            }
+        } else {
+            System.out.println(Migration.getThisBlock() + " Property [" + property + "] is already being used in one of the parents group [" + group + "]");
+        }
+    }
+
+    private void sqlAdditionalInsert(String group, String propertyInGroup, String property) {
+        System.out.println(" - Make available Property [" + property + "] for Groups [" + group + "]");
+        try {
+            this.insertPropertiesInGroupsRankingPreparedStatement.setString(1, group);
+            this.insertPropertiesInGroupsRankingPreparedStatement.setString(2, propertyInGroup);
+            this.insertPropertiesInGroupsRankingPreparedStatement.setInt(3, this.getPropertiesInGroupsRankingSequence(group));
+            this.insertPropertiesInGroupsRankingPreparedStatement.executeUpdate();
+        } catch (SQLException ex) {
+            Logger.getLogger(MigrationShopGroups.class.getName()).log(Level.SEVERE, null, ex);
+        }
     }
 }
