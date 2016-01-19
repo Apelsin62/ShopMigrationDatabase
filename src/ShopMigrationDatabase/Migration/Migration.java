@@ -60,7 +60,7 @@ public class Migration {
 
     private MySQLHelper oldFormatDB;
     private MySQLHelper newFormatDB;
-    private SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy HH:mm:ss");
+    private final SimpleDateFormat dateFormat = new SimpleDateFormat("dd.MM.yyyy HH:mm:ss");
     public static Integer allBlocks = 12;
     public static Integer totalBlock = 0;
 
